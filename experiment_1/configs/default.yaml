@@ -1,0 +1,98 @@
+units:
+  stl_to_m: 0.001
+paths:
+  raw_assets: assets/raw
+  processed_assets: assets/processed
+  outputs: outputs
+simulation:
+  timestep_s: 0.00025
+  duration_limit_s: 30.0
+  seed: 1
+  headless: true
+  integrator: implicitfast
+  solver: Newton
+  iterations: 100
+  ls_iterations: 20
+  contact_margin_m: 0.0001
+  contact_gap_m: 0.0
+  solref: [0.003, 1.0]
+  solimp: [0.9, 0.95, 0.001, 0.5, 2.0]
+  max_kinetic_energy_j: 5.0
+  max_constraint_error_m: 0.005
+payload:
+  mass_kg: 0.025
+  density_mode: false
+  density_kg_m3: 1200.0
+  ground_friction: [0.7, 0.01, 0.001]
+  block_friction: [0.6, 0.01, 0.001]
+strings:
+  count: 7
+  backend: flex
+  radius_m: 0.00030
+  segments_per_string: 48
+  pretension_n: 0.10
+  axial_stiffness_n_per_m: 1200.0
+  damping_n_s_per_m: 0.5
+  density_kg_per_m3: 1100.0
+  friction: [0.5, 0.01, 0.001]
+  bending_stiffness: 1.0e-8
+  pretension_tolerance_n: 0.04
+  settle_time_s: 0.15
+  numerical_mass_scale: 50.0
+washer:
+  mode: compliant_fingers
+  finger_count: 8
+  young_modulus_pa: 8.0e6
+  poisson_ratio: 0.45
+  damping: 0.02
+  density_kg_per_m3: 1200.0
+  peg_friction: [0.8, 0.02, 0.002]
+  effective_stiffness_nm_rad: 0.006
+  finger_joint_damping: 0.0004
+  mesh_size_m: 0.00055
+  insertion_fraction: 0.45
+  numerical_mass_scale: 1000.0
+controller:
+  engagement_axis: y
+  engagement_sign: auto
+  release_vector: [0.0, -1.0, 0.0]
+  approach_speed_m_s: 0.02
+  engagement_speed_m_s: 0.01
+  lift_speed_m_s: 0.015
+  press_speed_m_s: 0.003
+  release_speed_m_s: 0.01
+  max_downward_force_n: 30.0
+  max_upward_force_n: 1.0
+  max_horizontal_force_n: 30.0
+  max_torque_nm: 0.08
+  force_slowdown_fraction: 0.8
+  pickup_lift_m: 0.025
+  engagement_distance_m: 0.007
+  release_distance_m: 0.025
+  hold_duration_s: 0.5
+  slack_tension_n: 0.04
+collision:
+  backend: coacd
+  coacd_threshold: 0.03
+  coacd_max_hulls: 64
+  gripper_enabled: false
+output:
+  sample_hz: 200.0
+  render_width: 960
+  render_height: 720
+  render_fps: 30
+  debug_geometry: true
+metrics:
+  pickup_min_lift_m: 0.020
+  pickup_hold_s: 0.5
+  max_payload_tilt_deg: 20.0
+  release_clear_s: 0.25
+  placed_translation_tolerance_m: 0.003
+  placed_rotation_tolerance_deg: 5.0
+  contact_force_epsilon_n: 0.01
+  retention_force_epsilon_n: 0.02
+perturbations:
+  payload_xy_offset_m: [0.0, 0.0]
+  payload_yaw_deg: 0.0
+  gripper_height_error_m: 0.0
+  peg_xy_misalignment_m: [0.0, 0.0]

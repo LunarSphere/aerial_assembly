@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aerial-gripper-sim"
+version = "0.1.0"
+description = "MuJoCo simulation of an actuatorless string gripper and self-locking payload stack"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = {text = "MIT"}
+dependencies = [
+  "coacd>=1.0.7,<2",
+  "gmsh>=4.13,<5",
+  "imageio>=2.37,<3",
+  "imageio-ffmpeg>=0.6,<1",
+  "matplotlib>=3.10,<4",
+  "meshio>=5.3,<6",
+  "mujoco>=3.10,<3.11",
+  "networkx>=3.4,<4",
+  "numpy>=2.2,<3",
+  "pandas>=2.2,<4",
+  "pyarrow>=19,<24",
+  "pyyaml>=6,<7",
+  "rtree>=1.4,<2",
+  "scipy>=1.15,<2",
+  "shapely>=2.0,<3",
+  "tetgen>=0.8,<1",
+  "trimesh>=4.7,<5",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3,<10",
+  "pytest-cov>=6,<8",
+]
+
+[project.scripts]
+aerial-gripper-sim = "aerial_gripper_sim.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aerial_gripper_sim"]
+
+[tool.pytest.ini_options]
+addopts = "-ra -m 'not slow'"
+testpaths = ["tests"]
+markers = [
+  "slow: expensive deformable, rendering, or full-cycle simulation",
+]

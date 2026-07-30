@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.py[cod]
+outputs/*
+!outputs/.gitkeep
+assets/processed/*
+!assets/processed/.gitkeep
+*.egg-info/
+.coverage
+MUJOCO_LOG.TXT

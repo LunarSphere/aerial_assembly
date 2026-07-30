@@ -1,0 +1,5 @@
+washer:
+  mode: compliant_fingers
+controller:
+  engagement_sign: auto
+  release_vector: [0.0, -1.0, 0.0]
