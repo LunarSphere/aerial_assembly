@@ -72,6 +72,10 @@ controller:
   max_torque_nm: 0.08
   force_slowdown_fraction: 0.8
   pickup_lift_m: 0.025
+  # Clear the 48 mm target block before horizontal two-block transport.
+  transport_lift_m: 0.055
+  # Includes the gap between the suspended payload and the solid press bar.
+  placement_press_distance_m: 0.030
   max_takeup_m: 0.030
   engagement_distance_m: 0.0055
   ramp_follow_drop_m: 0.0100

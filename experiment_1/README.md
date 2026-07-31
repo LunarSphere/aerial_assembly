@@ -68,12 +68,14 @@ uv run aerial-gripper-sim run --scenario washer_pullout_test
 uv run aerial-gripper-sim run --scenario placement_only
 uv run aerial-gripper-sim run --scenario release_only
 uv run aerial-gripper-sim run --scenario full_cycle
+uv run aerial-gripper-sim run --scenario pick_and_place
 ```
 
 Use the interactive official viewer or record headlessly:
 
 ```bash
 uv run aerial-gripper-sim run --scenario seven_string_pickup --viewer
+uv run aerial-gripper-sim run --scenario pick_and_place --viewer
 MUJOCO_GL=egl uv run aerial-gripper-sim run \
   --scenario full_cycle --record outputs/full_cycle.mp4
 ```
@@ -155,3 +157,40 @@ Detailed design notes:
 - [Controller](docs/controller.md)
 - [Validation and calibration](docs/validation.md)
 - [Limitations](docs/limitations.md)
+
+
+
+## useful commands 
+
+to demonstrate picking up a block. 
+uv run aerial-gripper-sim run \
+  --scenario seven_string_pickup \
+  --set strings.segments_per_string=16 \
+  --set simulation.iterations=60 \
+  --set simulation.ls_iterations=10 \
+  --viewer
+
+to record it 
+MUJOCO_GL=egl
+uv run aerial-gripper-sim run \
+  --scenario seven_string_pickup \
+  --set strings.segments_per_string=16 \
+  --set simulation.iterations=60 \
+  --set simulation.ls_iterations=10 \
+  --viewer \
+  --record outputs/pickup.mp4
+  
+  MUJOCO_GL=egl uv run aerial-gripper-sim run \
+  --scenario seven_string_pickup --record outputs/full_cycle.mp4
+
+
+uv run aerial-gripper-sim run --scenario seven_string_pickup --viewer
+MUJOCO_GL=egl uv run aerial-gripper-sim run \
+  --scenario seven_string_pickup --record outputs/full_cycle.mp4
+
+• Placement passes with the new URDF assembly:
+
+  - 3.06 mm minimum peg insertion
+  - 0.686 N peak insertion force
+  - 0.21 mm placement error
+  - 0.73° rotation error

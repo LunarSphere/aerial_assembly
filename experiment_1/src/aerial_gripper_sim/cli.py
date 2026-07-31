@@ -32,6 +32,7 @@ SCENARIOS = (
     "placement_only",
     "release_only",
     "full_cycle",
+    "pick_and_place",
 )
 
 
@@ -128,6 +129,9 @@ def run_simulation(
         initial_quat,
         controller_target,
     )
+    press_pad_id = mujoco.mj_name2id(
+        scene.model, mujoco.mjtObj.mjOBJ_GEOM, "gripper_press_pad"
+    )
     viewer_handle = launch_passive(scene) if viewer else None
     video = (
         VideoRecorder(scene, record_path, config.output.render_fps)
@@ -150,6 +154,17 @@ def run_simulation(
             and scene.data.time < config.simulation.duration_limit_s
         ):
             command = controller.step(float(scene.data.time), latest)
+            if scenario == "pick_and_place" and press_pad_id >= 0:
+                pressing = command.state in {
+                    ControllerState.PRESS_INSERT,
+                    ControllerState.VERIFY_RETENTION,
+                    ControllerState.DONE,
+                }
+                # Keep the collision pair compiled, but park the press surface
+                # above the scene until insertion. MuJoCo's broadphase pair
+                # filtering is compiled from contype/conaffinity, so changing
+                # only those masks at runtime can leave the new pair inactive.
+                scene.model.geom_pos[press_pad_id, 2] = -0.0444 if pressing else 1.0
             scene.data.mocap_pos[control_mocap_id] = command.position_m
             scene.data.mocap_quat[control_mocap_id] = command.quaternion_wxyz
             mujoco.mj_step(scene.model, scene.data)
@@ -158,7 +173,7 @@ def run_simulation(
                 latest = sensors.sample()
                 recorder.append(latest, controller.state.value)
             if step % 20 == 0:
-                sensors.check_safety()
+                sensors.check_safety(controller.state.value)
             if video is not None and step % video_interval == 0:
                 video.capture()
             if viewer_handle is not None:

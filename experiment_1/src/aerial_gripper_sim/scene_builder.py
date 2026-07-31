@@ -51,6 +51,7 @@ class SceneBuilder:
             "placement_only",
             "release_only",
             "full_cycle",
+            "pick_and_place",
         }
         anchors = manifest["anchors"]
         string_model = make_string_model(self.config.strings, anchors)
@@ -195,6 +196,9 @@ class SceneBuilder:
                 fullinertia="{_inertia(inertia)}"/>
               <geom name="payload_visual" type="mesh" mesh="block_visual"
                 contype="0" conaffinity="0" rgba="0.8 0.55 0.12 1"/>
+              <geom name="payload_press_surface" type="box"
+                pos="0 0 0.04775" size="0.017 0.019 0.00025"
+                contype="32" conaffinity="64" rgba="0.8 0.55 0.12 0"/>
               {_prefix_geoms(collision_geoms, "payload", "2", "29")}
               {payload_hook_geoms}
             </body>
@@ -280,6 +284,9 @@ class SceneBuilder:
               <freejoint name="gripper_free"/>
               <inertial pos="0 0 -0.02" mass="0.05" diaginertia="0.00008 0.00008 0.00008"/>
               {gripper_geoms}
+              <geom name="gripper_press_pad" type="box"
+                pos="0 0 1" size="0.017 0.0095 0.0005"
+                contype="64" conaffinity="32" rgba="0.25 0.35 0.8 0"/>
               <site name="gripper_reference" pos="0 0 0" size="0.001"/>
               {sites}
               {string_xml}
@@ -294,6 +301,11 @@ class SceneBuilder:
             {string_equality_xml}
             {payload_equality_xml}
           </equality>
+          <contact>
+            <pair geom1="gripper_press_pad" geom2="payload_press_surface"
+              friction="0.02 0.001 0.0001"
+              solref="0.002 1" solimp="0.95 0.99 0.001 0.5 2"/>
+          </contact>
         </mujoco>
         """
 

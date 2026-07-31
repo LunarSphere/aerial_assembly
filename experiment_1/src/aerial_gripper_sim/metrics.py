@@ -53,7 +53,7 @@ def compute_metrics(
     )
     target_xy = (
         np.array([0.0, 0.12])
-        if scenario in {"full_cycle", "release_only"}
+        if scenario in {"full_cycle", "pick_and_place", "release_only"}
         else np.zeros(2)
     )
     placed_translation_error = float(np.linalg.norm(positions[-1, :2] - target_xy))
@@ -101,6 +101,7 @@ def compute_metrics(
         "placement_only": placement_success,
         "release_only": release_success,
         "full_cycle": pickup_success and placement_success and release_success,
+        "pick_and_place": pickup_success and placement_success,
     }.get(scenario, controller_success)
     if tensions.shape[1]:
         denominator = np.maximum(np.mean(tensions, axis=1), 1.0e-9)

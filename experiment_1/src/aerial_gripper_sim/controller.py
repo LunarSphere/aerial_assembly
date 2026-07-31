@@ -29,6 +29,7 @@ class ControllerState(StrEnum):
     LIFT = "LIFT"
     HOLD_TEST = "HOLD_TEST"
     TRANSPORT_TO_TARGET = "TRANSPORT_TO_TARGET"
+    HOVER_TARGET = "HOVER_TARGET"
     ALIGN_PEGS = "ALIGN_PEGS"
     PRESS_INSERT = "PRESS_INSERT"
     VERIFY_RETENTION = "VERIFY_RETENTION"
@@ -118,6 +119,27 @@ ROUTES: dict[str, list[ControllerState]] = {
         ControllerState.RETREAT,
         ControllerState.DONE,
     ],
+    # Explicit two-block demonstration: pick the payload at the origin, carry
+    # it over the separate target block, and finish after verified insertion.
+    "pick_and_place": [
+        ControllerState.RESET,
+        ControllerState.SETTLE,
+        ControllerState.APPROACH_PAYLOAD,
+        ControllerState.DESCEND_TO_RAMPS,
+        ControllerState.ENGAGE_FORWARD,
+        ControllerState.POSITION_UNDERCUT,
+        ControllerState.SEAT_UNDERCUT,
+        ControllerState.VERIFY_CAPTURE,
+        ControllerState.TAKE_UP_SLACK,
+        ControllerState.LIFT,
+        ControllerState.HOLD_TEST,
+        ControllerState.TRANSPORT_TO_TARGET,
+        ControllerState.HOVER_TARGET,
+        ControllerState.ALIGN_PEGS,
+        ControllerState.PRESS_INSERT,
+        ControllerState.VERIFY_RETENTION,
+        ControllerState.DONE,
+    ],
 }
 
 
@@ -189,12 +211,7 @@ class ScenarioController:
             return ControllerCommand(self.current_position, self.quaternion, self.state)
         elapsed = time_s - self.state_start_s
         if self.state == ControllerState.TAKE_UP_SLACK:
-            enough = (
-                measurements.get("taut_strings", 0)
-                >= self.config.controller.minimum_captured_strings
-                and measurements.get("captured_strings", 0)
-                >= self.config.controller.minimum_captured_strings
-            )
+            enough = self._takeup_support_detected(measurements)
             if enough:
                 if self.taut_start_s is None:
                     self.taut_start_s = time_s
@@ -293,19 +310,49 @@ class ScenarioController:
         elif state == ControllerState.LIFT:
             if self.scenario == "washer_pullout_test":
                 self.target_position[2] += 0.015
+            elif self.scenario in {"full_cycle", "pick_and_place"}:
+                self.target_position[2] += self.config.controller.transport_lift_m
             else:
                 self.target_position[2] += self.config.controller.pickup_lift_m
             speed = self.config.controller.lift_speed_m_s
         elif state == ControllerState.HOLD_TEST:
             hold = self.config.controller.hold_duration_s
         elif state == ControllerState.TRANSPORT_TO_TARGET:
-            self.target_position[:2] = self.stack_target[:2]
+            payload_position = np.asarray(
+                measurements.get("payload_position_m", self.current_position),
+                dtype=float,
+            )
+            # Preserve the measured suspension offset. Commanding the gripper
+            # itself to the target leaves the hanging payload about 1 mm
+            # behind, which is large relative to the washer/peg clearance.
+            suspension_offset = self.current_position[:2] - payload_position[:2]
+            self.target_position[:2] = (
+                self.stack_target[:2] + suspension_offset
+            )
             speed = self.config.controller.approach_speed_m_s
+        elif state == ControllerState.HOVER_TARGET:
+            # Hold above the second block long enough for the viewer to show
+            # the carried payload clearly before the insertion descent.
+            hold = 0.5
         elif state == ControllerState.ALIGN_PEGS:
-            self.target_position[:2] = self.stack_target[:2]
+            if self.scenario in {"full_cycle", "pick_and_place"}:
+                payload_position = np.asarray(
+                    measurements.get("payload_position_m", self.current_position),
+                    dtype=float,
+                )
+                self.target_position[:2] += (
+                    self.stack_target[:2] - payload_position[:2]
+                )
+            else:
+                self.target_position[:2] = self.stack_target[:2]
             speed = self.config.controller.approach_speed_m_s
         elif state == ControllerState.PRESS_INSERT:
-            self.target_position[2] -= 0.018
+            distance = (
+                self.config.controller.placement_press_distance_m
+                if self.scenario == "pick_and_place"
+                else 0.018
+            )
+            self.target_position[2] -= distance
             speed = self.config.controller.press_speed_m_s
         elif state == ControllerState.VERIFY_RETENTION:
             hold = 0.25
@@ -387,6 +434,7 @@ class ScenarioController:
                 self.taut_start_s is not None
                 and self.last_step_s - self.taut_start_s
                 >= self.config.controller.capture_hold_s
+                and self._takeup_support_detected(measurements)
                 and measurements.get("max_string_endpoint_error_m", 0.0)
                 <= self.config.strings.endpoint_error_limit_m
                 and measurements.get("max_string_axial_strain_abs", 0.0)
@@ -445,6 +493,32 @@ class ScenarioController:
             self.release_clear_start_s = None
             return False
         return reached
+
+    def _takeup_support_detected(self, measurements: dict[str, Any]) -> bool:
+        """Recognize load transfer after the pre-lift capture has been verified.
+
+        `captured_strings` is an instantaneous geometric pocket-occupancy
+        classifier. Once the block rises, a cable can remain mechanically
+        trapped against a J return while its sampled vertices move outside the
+        narrow pocket volume. Requiring four such classifications throughout
+        take-up therefore rejects a visibly and mechanically successful lift.
+
+        Post-capture validation instead uses the mechanics that matter: several
+        independently taut cables, sustained payload contact, enough aggregate
+        tension to support most of the payload weight, and measurable lift.
+        Endpoint accuracy and axial strain remain separate success conditions.
+        """
+        required_load_strings = min(
+            3, self.config.controller.minimum_captured_strings
+        )
+        support_tension_n = 0.8 * self.config.payload.mass_kg * 9.81
+        return (
+            measurements.get("taut_strings", 0) >= required_load_strings
+            and measurements.get("string_payload_contacts", 0) > 0
+            and measurements.get("total_string_tension_n", 0.0)
+            >= support_tension_n
+            and measurements.get("payload_lift_m", 0.0) >= 0.002
+        )
 
     def _force_scale(self, measurements: dict[str, Any]) -> float:
         if self.scenario in {

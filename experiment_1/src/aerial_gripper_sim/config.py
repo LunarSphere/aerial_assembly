@@ -108,6 +108,8 @@ class ControllerConfig:
     max_torque_nm: float = 0.08
     force_slowdown_fraction: float = 0.8
     pickup_lift_m: float = 0.025
+    transport_lift_m: float = 0.055
+    placement_press_distance_m: float = 0.030
     max_takeup_m: float = 0.030
     engagement_distance_m: float = 0.0055
     ramp_follow_drop_m: float = 0.0100
@@ -220,6 +222,10 @@ class AppConfig:
             "controller.max_downward_force_n": self.controller.max_downward_force_n,
             "controller.max_upward_force_n": self.controller.max_upward_force_n,
             "controller.takeup_speed_m_s": self.controller.takeup_speed_m_s,
+            "controller.transport_lift_m": self.controller.transport_lift_m,
+            "controller.placement_press_distance_m": (
+                self.controller.placement_press_distance_m
+            ),
             "controller.ramp_follow_drop_m": self.controller.ramp_follow_drop_m,
             "controller.seating_rise_m": self.controller.seating_rise_m,
             "metrics.retention_force_epsilon_n": self.metrics.retention_force_epsilon_n,
