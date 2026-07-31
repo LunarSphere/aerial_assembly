@@ -60,6 +60,9 @@ class SensorSuite:
             else []
         )
         tensions = [sample.mean_tension_n for sample in string_samples]
+        endpoint_errors = [sample.endpoint_error_m for sample in string_samples]
+        axial_strains = [sample.axial_strain for sample in string_samples]
+        captured = [sample.captured for sample in string_samples]
         contacts = sum(sample.contact_count for sample in string_samples)
         insertion_depths = [sample.insertion_depth_m for sample in washer_samples]
         measurement = {
@@ -80,6 +83,24 @@ class SensorSuite:
                 sample.peak_tension_n for sample in string_samples
             ],
             "strings_carrying_load": int(sum(value > 0.01 for value in tensions)),
+            "taut_strings": int(
+                sum(
+                    value >= self.config.controller.taut_reaction_n
+                    for value in tensions
+                )
+            ),
+            "captured_strings": int(sum(captured)),
+            "string_captured": captured,
+            "string_endpoint_errors_m": endpoint_errors,
+            "max_string_endpoint_error_m": (
+                float(max(endpoint_errors)) if endpoint_errors else 0.0
+            ),
+            "string_axial_strains": axial_strains,
+            "max_string_axial_strain_abs": (
+                float(max(abs(value) for value in axial_strains))
+                if axial_strains
+                else 0.0
+            ),
             "string_payload_contacts": contacts,
             "string_contact_impulse_ns": float(
                 sum(sample.contact_impulse_ns for sample in string_samples)

@@ -35,4 +35,5 @@ def test_collision_proxy_preserves_nonconvex_volume(config: AppConfig) -> None:
     assert validation["valid"], validation["errors"]
     assert validation["part_count"] > 1
     assert validation["proxy_fill_ratio"] < 0.5
+    assert proxy["excluded_hook_intrusion_parts"]
     assert Path(proxy["diagnostic"]).is_file()

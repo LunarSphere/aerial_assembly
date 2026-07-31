@@ -4,7 +4,8 @@
 
 ```text
 RESET → SETTLE → APPROACH_PAYLOAD → DESCEND_TO_RAMPS
-→ ENGAGE_FORWARD → TENSION_CHECK → LIFT → HOLD_TEST
+→ ENGAGE_FORWARD → POSITION_UNDERCUT → SEAT_UNDERCUT
+→ VERIFY_CAPTURE → TAKE_UP_SLACK → LIFT → HOLD_TEST
 → TRANSPORT_TO_TARGET → ALIGN_PEGS → PRESS_INSERT
 → VERIFY_RETENTION → LOWER_FOR_SLACK → RELEASE_TRANSLATE
 → VERIFY_RELEASE → RETREAT → DONE
@@ -21,11 +22,18 @@ eventually produces a useful timeout.
 Measurement gates include:
 
 - cable-payload contact for descent and engagement;
-- at least three loaded cables, tension, and contact for tension check;
+- measured cable occupancy in at least four tooth cavities before take-up;
+- simultaneous capture, endpoint reaction, endpoint accuracy, and bounded
+  axial strain during slack take-up;
 - payload COM rise for lift/hold;
 - minimum of all four insertion depths and reaction force for retention;
 - low excess tension or already-clear contact for slack;
 - continuous zero contact for release.
+
+The forward positioning phase consumes lateral slack while the yarn remains
+low. The externally driven rise then begins from that forward-biased pose.
+Take-up is slow and separately force-limited; the commanded motion never
+creates a hidden attachment.
 
 The engagement axis/sign and arbitrary 3-D release vector are configurable.
 `auto` currently records the geometry-derived `+Y` choice. Calibration runs

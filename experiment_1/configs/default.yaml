@@ -4,6 +4,7 @@ paths:
   raw_assets: assets/raw
   processed_assets: assets/processed
   outputs: outputs
+  assembly_urdf: ghast_0_new/urdf/ghast_0.urdf
 simulation:
   timestep_s: 0.00025
   duration_limit_s: 30.0
@@ -27,9 +28,12 @@ payload:
   block_friction: [0.6, 0.01, 0.001]
 strings:
   count: 7
-  backend: flex
+  backend: cable
   radius_m: 0.00030
   segments_per_string: 48
+  slack_length_m: 0.00100
+  endpoint_error_limit_m: 0.00005
+  # The following stiffness/pretension fields apply only to backend: flex.
   pretension_n: 0.10
   axial_stiffness_n_per_m: 1200.0
   damping_n_s_per_m: 0.5
@@ -38,7 +42,7 @@ strings:
   bending_stiffness: 1.0e-8
   pretension_tolerance_n: 0.04
   settle_time_s: 0.15
-  numerical_mass_scale: 50.0
+  numerical_mass_scale: 1.0
 washer:
   mode: compliant_fingers
   finger_count: 8
@@ -58,19 +62,27 @@ controller:
   release_vector: [0.0, -1.0, 0.0]
   approach_speed_m_s: 0.02
   engagement_speed_m_s: 0.01
+  takeup_speed_m_s: 0.005
   lift_speed_m_s: 0.015
   press_speed_m_s: 0.003
   release_speed_m_s: 0.01
   max_downward_force_n: 30.0
-  max_upward_force_n: 1.0
+  max_upward_force_n: 5.0
   max_horizontal_force_n: 30.0
   max_torque_nm: 0.08
   force_slowdown_fraction: 0.8
   pickup_lift_m: 0.025
-  engagement_distance_m: 0.007
+  max_takeup_m: 0.030
+  engagement_distance_m: 0.0055
+  ramp_follow_drop_m: 0.0100
+  seating_distance_m: 0.0000
+  seating_rise_m: 0.0030
   release_distance_m: 0.025
   hold_duration_s: 0.5
   slack_tension_n: 0.04
+  taut_reaction_n: 0.020
+  capture_hold_s: 0.050
+  minimum_captured_strings: 4
 collision:
   backend: coacd
   coacd_threshold: 0.03

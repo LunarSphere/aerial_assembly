@@ -11,19 +11,22 @@ come from flex/contact mechanics, and no pickup or full-cycle attachment is
 welded, parented, or toggled. The washer-only insertion and pullout experiments
 use a clearly named mocap test fixture to prescribe the bench-test peg motion.
 
-> **Calibration warning:** masses, elastic properties, cable pretension,
+> **Calibration warning:** masses, elastic properties, yarn slack,
 > friction, numerical regularization, force limits, and trajectories are
 > engineering starting assumptions. They have not been validated against a
 > physical prototype. See [ASSUMPTIONS.md](ASSUMPTIONS.md).
 
 ## Current validation status
 
-The asset pipeline, cable ramp test, compliant-washer insertion, washer
-pullout, and placement fixture pass deterministically. The nominal pickup still
-fails honestly: the corrected full-span hook proxy sustains contact but lifts
-the 25 g block only about 1 mm, below the required 20 mm. Consequently release
-and full-cycle tests are retained as slow expected regressions rather than
-being made to pass with a hidden attachment.
+The asset pipeline, inextensible-cable tests, cable ramp test,
+compliant-washer insertion, washer pullout, and placement fixture pass
+deterministically. The default block and washer assembly now comes from
+`ghast_0_new/urdf/ghast_0.urdf`, including its deeper J-shaped teeth and four
+explicit fixed-joint washer poses. The nominal pickup still fails honestly:
+the 0.6 mm yarn holds length to numerical precision but leaves the J pockets
+during take-up before lifting the 25 g block by the required 20 mm.
+Consequently release and full-cycle tests remain slow expected regressions
+rather than being made to pass with a hidden attachment.
 
 ## Installation
 
@@ -35,8 +38,8 @@ the operating system's base Python.
 uv sync --extra dev
 ```
 
-Place the four STL files and concept PDF in `assets/raw/` using these exact
-names:
+Place the four legacy STL files and concept PDF in `assets/raw/` using these
+exact names:
 
 ```text
 GR_0.stl
@@ -48,6 +51,10 @@ Autonomous System Design V0.pdf
 
 Raw assets are read-only inputs. Generated normalized meshes, hulls, diagnostics,
 and the cache manifest go to `assets/processed/`.
+
+The default configuration additionally reads the fixed assembly at
+`ghast_0_new/urdf/ghast_0.urdf`. Set `paths.assembly_urdf=null` to return to
+the legacy standalone block and disconnected target-assembly inputs.
 
 ## Quick start
 
@@ -118,6 +125,8 @@ configuration, and telemetry tail.
 Important pass criteria are saved with every run:
 
 - pickup: at least 20 mm lift, 0.5 s supported hold, and bounded tilt;
+- cable integrity: endpoint error below 0.05 mm and axial strain near numerical
+  zero throughout take-up;
 - placement: all four recovered washer locations exceed 3 mm insertion, remain
   within pose tolerance, and do not exceed the configured fixture force;
 - pullout: retention force above payload weight is measurable;

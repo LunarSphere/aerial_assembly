@@ -19,6 +19,12 @@ import trimesh
 from scipy.spatial import cKDTree
 
 from .config import AppConfig
+from .urdf_assets import (
+    UrdfAssembly,
+    UrdfAssetError,
+    load_fixed_mesh_assembly,
+    load_scaled_mesh,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -319,6 +325,60 @@ def recover_target_assembly(
     }
 
 
+def recover_urdf_target_assembly(
+    assembly: UrdfAssembly,
+    block_transform: np.ndarray,
+    legacy_washer_source: trimesh.Trimesh,
+    legacy_washer_scale: float,
+) -> dict[str, Any]:
+    """Convert explicit URDF fixed-joint washer poses into block simulation space."""
+    urdf_washer = load_scaled_mesh(assembly.washers[0])
+    legacy_washer = legacy_washer_source.copy()
+    legacy_washer.apply_scale(legacy_washer_scale)
+    extent_error = float(
+        np.max(np.abs(np.asarray(urdf_washer.extents) - legacy_washer.extents))
+    )
+    volume_error = float(
+        abs(abs(urdf_washer.volume) - abs(legacy_washer.volume))
+        / abs(legacy_washer.volume)
+    )
+    if extent_error > 0.0001 or volume_error > 0.02:
+        raise GeometryError(
+            "URDF washer mesh does not match SLW_0.stl closely enough: "
+            f"extent_error={extent_error:.6g} m, volume_error={volume_error:.2%}"
+        )
+
+    urdf_washer_normalization = normalization_transform(
+        "SLW_0.stl", urdf_washer, 1.0
+    )
+    washer_local = [
+        block_transform
+        @ block_from_washer
+        @ np.linalg.inv(urdf_washer_normalization)
+        for block_from_washer in assembly.block_mesh_from_washer_mesh
+    ]
+    washer_local.sort(key=lambda matrix: (matrix[0, 3], matrix[1, 3]))
+    centers = np.array([matrix[:3, 3] for matrix in washer_local])
+    if len(cKDTree(centers).query_pairs(r=0.008)):
+        raise GeometryError("URDF washer transforms overlap")
+    x_unique = np.unique(np.round(centers[:, 0], 6))
+    y_unique = np.unique(np.round(centers[:, 1], 6))
+    if len(x_unique) != 2 or len(y_unique) != 2:
+        raise GeometryError(
+            "URDF washers do not form a symmetric two-by-two target pattern"
+        )
+    return {
+        "source": "urdf_fixed_joints",
+        "urdf": assembly.metadata(),
+        "washer_transforms_target_m": [matrix.tolist() for matrix in washer_local],
+        "washer_centers_target_m": centers.tolist(),
+        "spacing_x_m": float(abs(x_unique[1] - x_unique[0])),
+        "spacing_y_m": float(abs(y_unique[1] - y_unique[0])),
+        "legacy_washer_extent_error_m": extent_error,
+        "legacy_washer_volume_error": volume_error,
+    }
+
+
 def _register_rigid(
     source: trimesh.Trimesh, target: trimesh.Trimesh
 ) -> tuple[np.ndarray, float]:
@@ -419,6 +479,20 @@ class GeometryPipeline:
                 for name in ASSET_NAMES
             },
         }
+        if self.config.paths.assembly_urdf is not None:
+            try:
+                assembly = load_fixed_mesh_assembly(
+                    self.config.paths.assembly_urdf
+                )
+            except UrdfAssetError as exc:
+                raise GeometryError(str(exc)) from exc
+            report["urdf_assembly"] = {
+                **assembly.metadata(),
+                "block_extents_m": list(assembly.block.extents_m),
+                "block_volume_m3": assembly.block.volume_m3,
+                "washer_extents_m": list(assembly.washers[0].extents_m),
+                "washer_volume_m3": assembly.washers[0].volume_m3,
+            }
         if write:
             self.processed_dir.mkdir(parents=True, exist_ok=True)
             (self.processed_dir / "asset_inspection.json").write_text(
@@ -428,11 +502,28 @@ class GeometryPipeline:
 
     def preprocess(self, *, force: bool = False) -> dict[str, Any]:
         inspection = self.inspect(write=True)
+        assembly: UrdfAssembly | None = None
+        urdf_hashes: dict[str, str] = {}
+        if self.config.paths.assembly_urdf is not None:
+            try:
+                assembly = load_fixed_mesh_assembly(
+                    self.config.paths.assembly_urdf
+                )
+            except UrdfAssetError as exc:
+                raise GeometryError(str(exc)) from exc
+            urdf_hashes[str(assembly.path)] = sha256_file(assembly.path)
+            urdf_hashes.update(
+                {
+                    str(path): sha256_file(path)
+                    for path in assembly.referenced_meshes
+                }
+            )
         key_payload = {
-            "pipeline_version": 2,
+            "pipeline_version": 5,
             "assets": {
                 name: item["sha256"] for name, item in inspection["assets"].items()
             },
+            "urdf_assets": urdf_hashes,
             "scale": self.config.units.stl_to_m,
             "collision": {
                 "backend": self.config.collision.backend,
@@ -453,8 +544,13 @@ class GeometryPipeline:
         processed_meshes: dict[str, str] = {}
         self.processed_dir.mkdir(parents=True, exist_ok=True)
         for name in ("GR_0.stl", "BB_0.stl", "SLW_0.stl"):
-            mesh = load_mesh(self.raw_dir / name)
-            transform = normalization_transform(name, mesh, self.config.units.stl_to_m)
+            if name == "BB_0.stl" and assembly is not None:
+                mesh = load_scaled_mesh(assembly.block)
+                scale = 1.0
+            else:
+                mesh = load_mesh(self.raw_dir / name)
+                scale = self.config.units.stl_to_m
+            transform = normalization_transform(name, mesh, scale)
             transforms[name] = transform
             normalized = apply_transform_copy(mesh, transform)
             destination = self.processed_dir / name
@@ -467,17 +563,37 @@ class GeometryPipeline:
         save_anchor_diagnostic(
             gripper_raw, anchors, self.processed_dir / "anchor_detection.png"
         )
-        target = recover_target_assembly(self.raw_dir, transforms)
+        if assembly is None:
+            target = recover_target_assembly(self.raw_dir, transforms)
+            block_source = {
+                "kind": "legacy_stl",
+                "path": str(self.raw_dir / "BB_0.stl"),
+            }
+        else:
+            target = recover_urdf_target_assembly(
+                assembly,
+                transforms["BB_0.stl"],
+                load_mesh(self.raw_dir / "SLW_0.stl"),
+                self.config.units.stl_to_m,
+            )
+            block_source = {
+                "kind": "urdf",
+                **assembly.metadata(),
+            }
         from .collision_proxies import build_block_collision_proxy
 
         collision = build_block_collision_proxy(
-            self.processed_dir / "BB_0.stl", self.processed_dir, self.config
+            self.processed_dir / "BB_0.stl",
+            self.processed_dir,
+            self.config,
+            exclude_hook_intrusions=assembly is not None,
         )
         manifest = {
             "cache_key": cache_key,
             "key_inputs": key_payload,
             "inspection_path": str(self.processed_dir / "asset_inspection.json"),
             "processed_meshes": processed_meshes,
+            "block_source": block_source,
             "raw_to_sim_transforms": {
                 name: matrix.tolist() for name, matrix in transforms.items()
             },

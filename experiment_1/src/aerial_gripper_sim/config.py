@@ -26,6 +26,7 @@ class PathsConfig:
     raw_assets: Path = Path("assets/raw")
     processed_assets: Path = Path("assets/processed")
     outputs: Path = Path("outputs")
+    assembly_urdf: Path | None = None
 
 
 @dataclass
@@ -58,9 +59,11 @@ class PayloadConfig:
 @dataclass
 class StringConfig:
     count: int = 7
-    backend: Literal["flex", "segmented"] = "flex"
+    backend: Literal["cable", "flex", "segmented"] = "cable"
     radius_m: float = 0.00030
     segments_per_string: int = 48
+    slack_length_m: float = 0.00100
+    endpoint_error_limit_m: float = 0.00005
     pretension_n: float = 0.10
     axial_stiffness_n_per_m: float = 1200.0
     damping_n_s_per_m: float = 0.5
@@ -69,7 +72,7 @@ class StringConfig:
     bending_stiffness: float = 1.0e-8
     pretension_tolerance_n: float = 0.04
     settle_time_s: float = 0.15
-    numerical_mass_scale: float = 50.0
+    numerical_mass_scale: float = 1.0
 
 
 @dataclass
@@ -95,19 +98,27 @@ class ControllerConfig:
     release_vector: tuple[float, float, float] = (0.0, -1.0, 0.0)
     approach_speed_m_s: float = 0.02
     engagement_speed_m_s: float = 0.01
+    takeup_speed_m_s: float = 0.005
     lift_speed_m_s: float = 0.015
     press_speed_m_s: float = 0.003
     release_speed_m_s: float = 0.01
     max_downward_force_n: float = 30.0
-    max_upward_force_n: float = 1.0
+    max_upward_force_n: float = 5.0
     max_horizontal_force_n: float = 30.0
     max_torque_nm: float = 0.08
     force_slowdown_fraction: float = 0.8
     pickup_lift_m: float = 0.025
-    engagement_distance_m: float = 0.007
+    max_takeup_m: float = 0.030
+    engagement_distance_m: float = 0.0055
+    ramp_follow_drop_m: float = 0.0100
+    seating_distance_m: float = 0.0
+    seating_rise_m: float = 0.0030
     release_distance_m: float = 0.025
     hold_duration_s: float = 0.5
     slack_tension_n: float = 0.04
+    taut_reaction_n: float = 0.020
+    capture_hold_s: float = 0.050
+    minimum_captured_strings: int = 4
 
 
 @dataclass
@@ -202,10 +213,15 @@ class AppConfig:
             "strings.radius_m": self.strings.radius_m,
             "strings.axial_stiffness_n_per_m": self.strings.axial_stiffness_n_per_m,
             "strings.numerical_mass_scale": self.strings.numerical_mass_scale,
+            "strings.endpoint_error_limit_m": self.strings.endpoint_error_limit_m,
             "washer.young_modulus_pa": self.washer.young_modulus_pa,
             "washer.mesh_size_m": self.washer.mesh_size_m,
             "washer.numerical_mass_scale": self.washer.numerical_mass_scale,
             "controller.max_downward_force_n": self.controller.max_downward_force_n,
+            "controller.max_upward_force_n": self.controller.max_upward_force_n,
+            "controller.takeup_speed_m_s": self.controller.takeup_speed_m_s,
+            "controller.ramp_follow_drop_m": self.controller.ramp_follow_drop_m,
+            "controller.seating_rise_m": self.controller.seating_rise_m,
             "metrics.retention_force_epsilon_n": self.metrics.retention_force_epsilon_n,
         }
         bad = [name for name, value in positive.items() if value <= 0]
@@ -215,6 +231,16 @@ class AppConfig:
             raise ConfigError("This geometry requires exactly seven strings")
         if self.strings.segments_per_string < 8:
             raise ConfigError("strings.segments_per_string must be at least 8")
+        if self.strings.slack_length_m < 0:
+            raise ConfigError("strings.slack_length_m must be non-negative")
+        if abs(self.controller.seating_distance_m) > 0.02:
+            raise ConfigError(
+                "controller.seating_distance_m magnitude must not exceed 0.02 m"
+            )
+        if not 1 <= self.controller.minimum_captured_strings <= self.strings.count:
+            raise ConfigError(
+                "controller.minimum_captured_strings must be between 1 and strings.count"
+            )
         if not 0.0 <= self.washer.poisson_ratio < 0.5:
             raise ConfigError("washer.poisson_ratio must be in [0, 0.5)")
         if self.simulation.timestep_s > self.strings.radius_m:

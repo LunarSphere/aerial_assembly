@@ -8,12 +8,13 @@ identified as geometry recovered from the supplied STL files.
 - STL coordinates are millimetres and are uniformly scaled by `0.001`.
 - `+Z` is up, the cable span is `X`, and nominal engagement is `+Y`.
 - Mesh bounding boxes define the gripper top datum and payload ground datum.
-- The four washer centers and orientations are registered from the disconnected
-  `Ghast_0.stl` components. Their centers are more trustworthy than vertex-wise
-  ICP because the reference washers were re-tessellated.
-- Thin hook lips are reinforced with a full-span analytic collision overlay
-  derived from block sections because convex-decomposition seams are too coarse
-  at the 1–2 mm feature scale.
+- The default block mesh and four washer poses come from the fixed-joint
+  `ghast_0_new/urdf/ghast_0.urdf` assembly. The disconnected `Ghast_0.stl`
+  registration remains the fallback when `paths.assembly_urdf` is null.
+- Tooth slopes, stems, and hook-return undersides use a full-span analytic
+  collision overlay derived from block sections because
+  convex-decomposition seams are too coarse at the sub-millimetre feature
+  scale. Exposed faces match the STL; thickness extends into solid material.
 
 ## Payload
 
@@ -26,15 +27,15 @@ identified as geometry recovered from the supplied STL files.
 
 - Radius: 0.30 mm.
 - Density: 1100 kg/m³.
-- Axial stiffness: 1200 N/m.
-- Edge damping: 0.5 N·s/m.
-- Pretension: 0.10 N per cable.
+- Installed slack beyond the anchor chord: 1.0 mm.
+- The default composite cable is axially inextensible and has no pretension.
+- Axial stiffness and edge damping apply only to the optional `flex` comparison
+  backend.
 - Friction: `[0.5, 0.01, 0.001]`.
 - Forty-eight segments are used by default.
-- A 50× numerical cable-mass scale is required for stable sub-millimetre flex
-  contact at the nominal timestep. Reported physical density is not changed.
-- Equality edge constraints provide stable axial response; tension telemetry
-  uses the configured physical stiffness and rejects compression.
+- Numerical cable-mass scale: 1×.
+- The second endpoint equality target is limited to 0.05 mm error; measured
+  axial strain is logged independently.
 
 ## Washers
 
@@ -54,11 +55,12 @@ identified as geometry recovered from the supplied STL files.
 - Contact impedance, a 0.25 ms timestep, Newton solver, and 100 iterations are
   numerical starting points.
 - Payload-ground, block, cable, and washer friction values are unmeasured.
-- The 30 N insertion/horizontal test-fixture cap, 1 N upward cap, and 0.08 N·m
+- The 30 N insertion/horizontal test-fixture cap, 5 N upward cap, and 0.08 N·m
   torque cap are unvalidated. The insertion cap is high because the current
   rigid block proxies generate transient fixture forces near 25 N.
-- Nominal motion distances are 32 mm descent, 7 mm engagement, 10 mm ramp
-  follow-down, 25 mm lift, 18 mm insertion, 5 mm slack lowering, and 25 mm
+- Nominal motion includes contact-terminated descent, 5.5 mm engagement,
+  10 mm ramp follow-down, no post-engagement lateral overtravel, slow
+  slack take-up, 25 mm lift, 18 mm insertion, 5 mm slack lowering, and 25 mm
   release translation.
 - `+Y` is selected from the concept/section orientation. Both signs were
   simulated; neither currently meets the pickup threshold.

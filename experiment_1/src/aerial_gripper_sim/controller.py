@@ -21,7 +21,11 @@ class ControllerState(StrEnum):
     APPROACH_PAYLOAD = "APPROACH_PAYLOAD"
     DESCEND_TO_RAMPS = "DESCEND_TO_RAMPS"
     ENGAGE_FORWARD = "ENGAGE_FORWARD"
+    POSITION_UNDERCUT = "POSITION_UNDERCUT"
+    SEAT_UNDERCUT = "SEAT_UNDERCUT"
     TENSION_CHECK = "TENSION_CHECK"
+    VERIFY_CAPTURE = "VERIFY_CAPTURE"
+    TAKE_UP_SLACK = "TAKE_UP_SLACK"
     LIFT = "LIFT"
     HOLD_TEST = "HOLD_TEST"
     TRANSPORT_TO_TARGET = "TRANSPORT_TO_TARGET"
@@ -51,7 +55,10 @@ ROUTES: dict[str, list[ControllerState]] = {
         ControllerState.APPROACH_PAYLOAD,
         ControllerState.DESCEND_TO_RAMPS,
         ControllerState.ENGAGE_FORWARD,
-        ControllerState.TENSION_CHECK,
+        ControllerState.POSITION_UNDERCUT,
+        ControllerState.SEAT_UNDERCUT,
+        ControllerState.VERIFY_CAPTURE,
+        ControllerState.TAKE_UP_SLACK,
         ControllerState.LIFT,
         ControllerState.HOLD_TEST,
         ControllerState.DONE,
@@ -95,7 +102,10 @@ ROUTES: dict[str, list[ControllerState]] = {
         ControllerState.APPROACH_PAYLOAD,
         ControllerState.DESCEND_TO_RAMPS,
         ControllerState.ENGAGE_FORWARD,
-        ControllerState.TENSION_CHECK,
+        ControllerState.POSITION_UNDERCUT,
+        ControllerState.SEAT_UNDERCUT,
+        ControllerState.VERIFY_CAPTURE,
+        ControllerState.TAKE_UP_SLACK,
         ControllerState.LIFT,
         ControllerState.HOLD_TEST,
         ControllerState.TRANSPORT_TO_TARGET,
@@ -155,6 +165,7 @@ class ScenarioController:
         self.failure_reason: str | None = None
         self.transitions: list[Transition] = []
         self.release_clear_start_s: float | None = None
+        self.taut_start_s: float | None = None
         self.engagement_sign = self._engagement_sign()
         self._enter_state(0.0, "controller initialized", {})
 
@@ -177,6 +188,18 @@ class ScenarioController:
         if self.finished:
             return ControllerCommand(self.current_position, self.quaternion, self.state)
         elapsed = time_s - self.state_start_s
+        if self.state == ControllerState.TAKE_UP_SLACK:
+            enough = (
+                measurements.get("taut_strings", 0)
+                >= self.config.controller.minimum_captured_strings
+                and measurements.get("captured_strings", 0)
+                >= self.config.controller.minimum_captured_strings
+            )
+            if enough:
+                if self.taut_start_s is None:
+                    self.taut_start_s = time_s
+            else:
+                self.taut_start_s = None
         force_scale = self._force_scale(measurements)
         step_duration = max(0.0, time_s - self.last_step_s)
         self.last_step_s = time_s
@@ -222,6 +245,7 @@ class ScenarioController:
         self.trajectory_progress_s = 0.0
         self.start_position = self.current_position.copy()
         self.target_position = self.current_position.copy()
+        self.taut_start_s = None
         state = self.state
         speed = self.config.controller.approach_speed_m_s
         hold = 0.1
@@ -233,7 +257,7 @@ class ScenarioController:
             self.target_position[2] = max(self.target_position[2], 0.10)
             speed = self.config.controller.approach_speed_m_s
         elif state == ControllerState.DESCEND_TO_RAMPS:
-            self.target_position[2] -= 0.032
+            self.target_position[2] -= 0.040
             speed = self.config.controller.approach_speed_m_s
         elif state == ControllerState.ENGAGE_FORWARD:
             axis = 0 if self.config.controller.engagement_axis == "x" else 1
@@ -243,11 +267,29 @@ class ScenarioController:
             # Follow the measured ramp drop while translating so the taut cable
             # can settle into the undercut instead of being dragged across the
             # hook tip at a fixed elevation.
-            self.target_position[2] -= 0.010
+            self.target_position[2] -= self.config.controller.ramp_follow_drop_m
             speed = self.config.controller.engagement_speed_m_s
+        elif state == ControllerState.POSITION_UNDERCUT:
+            # Consume lateral slack while holding the cable low on the ramp.
+            # The next state then raises from this forward-biased position.
+            axis = 0 if self.config.controller.engagement_axis == "x" else 1
+            self.target_position[axis] += (
+                self.engagement_sign * self.config.controller.seating_distance_m
+            )
+            speed = self.config.controller.takeup_speed_m_s
+        elif state == ControllerState.SEAT_UNDERCUT:
+            # Start the externally driven lift while preserving the forward
+            # bias. The cable follows the ramp into the retaining undercut.
+            self.target_position[2] += self.config.controller.seating_rise_m
+            speed = self.config.controller.takeup_speed_m_s
         elif state == ControllerState.TENSION_CHECK:
             self.target_position[2] += 0.002
             speed = self.config.controller.lift_speed_m_s
+        elif state == ControllerState.VERIFY_CAPTURE:
+            hold = self.config.controller.capture_hold_s
+        elif state == ControllerState.TAKE_UP_SLACK:
+            self.target_position[2] += self.config.controller.max_takeup_m
+            speed = self.config.controller.takeup_speed_m_s
         elif state == ControllerState.LIFT:
             if self.scenario == "washer_pullout_test":
                 self.target_position[2] += 0.015
@@ -313,15 +355,42 @@ class ScenarioController:
         }:
             return reached
         if state == ControllerState.DESCEND_TO_RAMPS:
-            return reached and measurements.get("string_payload_contacts", 0) > 0
+            return (
+                elapsed >= 0.1
+                and measurements.get("string_payload_contacts", 0) > 0
+            )
         if state == ControllerState.ENGAGE_FORWARD:
             return reached and measurements.get("string_payload_contacts", 0) > 0
+        if state == ControllerState.POSITION_UNDERCUT:
+            return reached and measurements.get("string_payload_contacts", 0) > 0
+        if state == ControllerState.SEAT_UNDERCUT:
+            return (
+                elapsed >= 0.05
+                and measurements.get("captured_strings", 0)
+                >= self.config.controller.minimum_captured_strings
+            )
         if state == ControllerState.TENSION_CHECK:
             return (
                 reached
                 and measurements.get("total_string_tension_n", 0.0) > 0.05
                 and measurements.get("strings_carrying_load", 0) >= 3
                 and measurements.get("string_payload_contacts", 0) > 0
+            )
+        if state == ControllerState.VERIFY_CAPTURE:
+            return (
+                reached
+                and measurements.get("captured_strings", 0)
+                >= self.config.controller.minimum_captured_strings
+            )
+        if state == ControllerState.TAKE_UP_SLACK:
+            return (
+                self.taut_start_s is not None
+                and self.last_step_s - self.taut_start_s
+                >= self.config.controller.capture_hold_s
+                and measurements.get("max_string_endpoint_error_m", 0.0)
+                <= self.config.strings.endpoint_error_limit_m
+                and measurements.get("max_string_axial_strain_abs", 0.0)
+                <= 1.0e-4
             )
         if state == ControllerState.LIFT:
             if self.scenario == "washer_pullout_test":
@@ -353,7 +422,9 @@ class ScenarioController:
             )
         if state == ControllerState.LOWER_FOR_SLACK:
             baseline = (
-                self.config.strings.count * self.config.strings.pretension_n
+                0.0
+                if self.config.strings.backend in {"cable", "segmented"}
+                else self.config.strings.count * self.config.strings.pretension_n
             )
             return (
                 reached
@@ -433,6 +504,10 @@ def _compact(measurements: dict[str, Any]) -> dict[str, Any]:
     keys = (
         "string_payload_contacts",
         "total_string_tension_n",
+        "captured_strings",
+        "taut_strings",
+        "max_string_endpoint_error_m",
+        "max_string_axial_strain_abs",
         "payload_lift_m",
         "minimum_insertion_depth_m",
     )

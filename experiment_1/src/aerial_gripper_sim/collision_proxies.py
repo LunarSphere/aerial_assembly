@@ -20,6 +20,8 @@ def build_block_collision_proxy(
     normalized_block_path: Path,
     output_dir: Path,
     config: AppConfig,
+    *,
+    exclude_hook_intrusions: bool = False,
 ) -> dict[str, Any]:
     mesh = load_mesh(normalized_block_path)
     backend = config.collision.backend
@@ -39,6 +41,11 @@ def build_block_collision_proxy(
     proxy_dir = output_dir / "bb_collision"
     proxy_dir.mkdir(parents=True, exist_ok=True)
     if backend == "coacd":
+        excluded_intrusions: list[int] = []
+        if exclude_hook_intrusions:
+            parts, excluded_intrusions = _exclude_hook_void_intrusions(mesh, parts)
+        for stale_path in proxy_dir.glob("hull_*.stl"):
+            stale_path.unlink()
         part_paths: list[str] = []
         for index, part in enumerate(parts):
             path = proxy_dir / f"hull_{index:03d}.stl"
@@ -56,6 +63,7 @@ def build_block_collision_proxy(
             "backend": "coacd",
             "fallback_reason": fallback_reason,
             "parts": part_paths,
+            "excluded_hook_intrusion_parts": excluded_intrusions,
             "procedural_boxes": None,
             "validation": metrics,
             "diagnostic": str(diagnostic),
@@ -67,6 +75,7 @@ def build_block_collision_proxy(
         "backend": "procedural_voxel_boxes",
         "fallback_reason": fallback_reason,
         "parts": [],
+        "excluded_hook_intrusion_parts": [],
         "procedural_boxes": str(boxes_path),
         "validation": {
             "valid": True,
@@ -76,6 +85,45 @@ def build_block_collision_proxy(
         },
         "diagnostic": None,
     }
+
+
+def _exclude_hook_void_intrusions(
+    visual_mesh: trimesh.Trimesh,
+    parts: list[trimesh.Trimesh],
+) -> tuple[list[trimesh.Trimesh], list[int]]:
+    """Remove convex pieces that occupy the measured open tooth cavities.
+
+    CoACD's global volume score can look acceptable while individual hulls
+    bridge a narrow undercut. Probe the central YZ hook section and reject any
+    complete hull that contains points which are outside the source mesh.
+    Critical hook surfaces are supplied separately from the exact section.
+    """
+    x_values = np.linspace(-0.015, 0.015, 7)
+    y_values = np.arange(-0.009, 0.00901, 0.0003)
+    z_values = np.arange(0.0403, 0.04771, 0.0003)
+    probes = np.array(
+        [[x, y, z] for x in x_values for y in y_values for z in z_values],
+        dtype=float,
+    )
+    void_probes = probes[~visual_mesh.contains(probes)]
+    excluded = [
+        index
+        for index, part in enumerate(parts)
+        if np.any(part.contains(void_probes))
+    ]
+    if excluded:
+        LOGGER.warning(
+            "Excluded %d CoACD hulls that bridged hook cavities: %s",
+            len(excluded),
+            excluded,
+        )
+    excluded_set = set(excluded)
+    kept = [part for index, part in enumerate(parts) if index not in excluded_set]
+    if len(kept) < 2:
+        raise GeometryError("Hook-cavity filtering removed all useful CoACD pieces")
+    if any(np.any(part.contains(void_probes)) for part in kept):
+        raise GeometryError("Collision proxy still occupies measured hook voids")
+    return kept, excluded
 
 
 def _coacd_parts(

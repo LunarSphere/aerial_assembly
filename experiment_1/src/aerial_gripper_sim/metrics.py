@@ -130,6 +130,15 @@ def compute_metrics(
         "number_of_strings_carrying_load_peak": int(
             max(item["strings_carrying_load"] for item in records)
         ),
+        "number_of_strings_captured_peak": int(
+            max(item.get("captured_strings", 0) for item in records)
+        ),
+        "peak_string_endpoint_error_m": float(
+            max(item.get("max_string_endpoint_error_m", 0.0) for item in records)
+        ),
+        "peak_string_axial_strain_abs": float(
+            max(item.get("max_string_axial_strain_abs", 0.0) for item in records)
+        ),
         "peak_tension_per_string_n": peak_tensions,
         "mean_tension_per_string_n": mean_tensions,
         "peak_load_sharing_imbalance": peak_imbalance,

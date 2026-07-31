@@ -14,21 +14,27 @@ a virtual materials-test fixture. This fixture is never used to claim pickup.
 
 ## Cables
 
-Each of seven cables is a MuJoCo 1-D flex with colliding capsule elements and
-both end vertices pinned in the gripper frame. Rest edges are shortened by
-`pretension / axial_stiffness`. Equality edge constraints provide a stable
-implicit axial response, while telemetry estimates:
+Each of seven yarns is a MuJoCo composite `cable`: a chain of colliding capsule
+bodies and ball joints. This topology is exactly inextensible at the joint
+level, unlike the optional `flex` diagnostic backend. The first end is rooted
+in the gripper body and the second is connected to its named anchor site with a
+stiff equality constraint.
 
 ```text
-tension = max(0, k * (current_length - rest_length) + c * edge_velocity)
+nominal length = anchor chord + configured slack
+axial strain = (reconstructed capsule-chain length - nominal length)
 ```
 
-The `max(0, ...)` enforces zero compressive load. Contact impulses come from
-`mj_contactForce`; hook distance is evaluated in the payload frame.
+Initial vertices follow a sine sag whose polyline length is solved to the
+requested value. There is no nominal pretension in cable mode: the chain
+buckles under compression, becomes taut during ascent, and transmits load only
+through joints/contact. Endpoint reaction is read from the equality constraint.
+Contact impulses come from `mj_contactForce`; hook occupancy is evaluated
+against the STL-section-derived tooth cavities in the moving payload frame.
 
-The numerical cable mass is 50 times material mass. Without this explicit
-regularization, a 0.3 mm cable produces sub-microgram nodes and unstable contact
-accelerations at 0.25 ms.
+Telemetry records nominal/current length, slack, axial strain, endpoint error,
+endpoint reaction, payload contacts, and capture state. The default numerical
+mass scale is 1, so configured density is the physical density.
 
 ## Washer modes
 
@@ -56,6 +62,11 @@ small margins, and no contact gap are exposed in YAML. Separate bitmasks allow
 cable-payload, payload-washer, and ground-payload contacts while preventing
 washer-target self-intersection.
 
+The hook collision overlay places measured slope, vertical-wall, and lip
+surfaces at the STL section coordinates. Proxy depth extends inward into solid
+material so compliant contacts cannot tunnel through a paper-thin shell.
+
 Safety checks stop on nonfinite state, MuJoCo warnings, excessive kinetic
 energy, more than 1.5 mm contact penetration, or excessive mocap constraint
+error. The take-up gate separately rejects excessive cable endpoint or length
 error.

@@ -35,9 +35,9 @@ def run_robustness_sweep(
             "engagement_distance_m": float(rng.uniform(0.005, 0.010)),
             "engagement_speed_m_s": float(rng.uniform(0.007, 0.014)),
             "release_angle_deg": float(rng.uniform(-30.0, 30.0)),
-            "pretension_n": float(rng.uniform(0.06, 0.14)),
+            "string_slack_m": float(rng.uniform(0.0004, 0.0016)),
             "string_radius_m": float(rng.uniform(0.00025, 0.00038)),
-            "axial_stiffness_n_per_m": float(rng.uniform(800.0, 1600.0)),
+            "seating_distance_m": float(rng.uniform(0.003, 0.007)),
             "string_friction": float(rng.uniform(0.35, 0.75)),
             "payload_mass_kg": float(rng.uniform(0.018, 0.035)),
             "washer_stiffness_nm_rad": float(rng.uniform(0.0035, 0.009)),
@@ -62,9 +62,9 @@ def run_robustness_sweep(
                 f"[{values['peg_misalignment_m'] * np.cos(peg_angle)},"
                 f"{values['peg_misalignment_m'] * np.sin(peg_angle)}]"
             ),
-            f"strings.pretension_n={values['pretension_n']}",
+            f"strings.slack_length_m={values['string_slack_m']}",
             f"strings.radius_m={values['string_radius_m']}",
-            f"strings.axial_stiffness_n_per_m={values['axial_stiffness_n_per_m']}",
+            f"controller.seating_distance_m={values['seating_distance_m']}",
             f"strings.friction=[{values['string_friction']},0.01,0.001]",
             f"payload.mass_kg={values['payload_mass_kg']}",
             f"washer.effective_stiffness_nm_rad={values['washer_stiffness_nm_rad']}",

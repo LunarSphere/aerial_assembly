@@ -136,6 +136,19 @@ class SceneBuilder:
             manifest["collision_proxy"]
         )
         processed = manifest["processed_meshes"]
+        use_j_hook_overlay = (
+            manifest.get("block_source", {}).get("kind") == "urdf"
+        )
+        payload_hook_geoms = (
+            _j_hook_geoms("payload", "2", "29")
+            if use_j_hook_overlay
+            else _hook_shelf_geoms("payload", "2", "29")
+        )
+        target_hook_geoms = (
+            _j_hook_geoms("target", "16", "5")
+            if use_j_hook_overlay
+            else _hook_shelf_geoms("target", "16", "5")
+        )
         asset_xml = f"""
           <mesh name="gripper_visual" file="{Path(processed['GR_0.stl']).resolve()}"/>
           <mesh name="block_visual" file="{Path(processed['BB_0.stl']).resolve()}"/>
@@ -159,6 +172,8 @@ class SceneBuilder:
         }:
             string_count = 0
         string_xml = "".join(string_model.xml_fragments(count=string_count))
+        string_extension_xml = string_model.extension_xml()
+        string_equality_xml = "".join(string_model.equality_fragments())
         payload_xml = ""
         payload_driver_xml = ""
         payload_equality_xml = ""
@@ -181,7 +196,7 @@ class SceneBuilder:
               <geom name="payload_visual" type="mesh" mesh="block_visual"
                 contype="0" conaffinity="0" rgba="0.8 0.55 0.12 1"/>
               {_prefix_geoms(collision_geoms, "payload", "2", "29")}
-              {_hook_shelf_geoms("payload", "2", "29")}
+              {payload_hook_geoms}
             </body>
             """
             if scenario in {
@@ -206,7 +221,7 @@ class SceneBuilder:
               <geom name="target_visual" type="mesh" mesh="block_visual"
                 contype="0" conaffinity="0" rgba="0.55 0.55 0.6 1"/>
               {_prefix_geoms(collision_geoms, "target", "16", "5")}
-              {_hook_shelf_geoms("target", "16", "5")}
+              {target_hook_geoms}
             </body>
             """
             if washer_model is not None:
@@ -230,6 +245,7 @@ class SceneBuilder:
             )
         return f"""
         <mujoco model="actuatorless_aerial_gripper_{scenario}">
+          {string_extension_xml}
           <compiler angle="radian" autolimits="true" balanceinertia="true"/>
           <option timestep="{option.timestep_s:.12g}" gravity="0 0 -9.81"
             integrator="{option.integrator}" solver="{option.solver}"
@@ -275,6 +291,7 @@ class SceneBuilder:
           <equality>
             <weld name="gripper_command_weld" body1="gripper" body2="gripper_target"
               solref="0.002 1" solimp="0.95 0.99 0.001 0.5 2"/>
+            {string_equality_xml}
             {payload_equality_xml}
           </equality>
         </mujoco>
@@ -314,32 +331,244 @@ def _prefix_geoms(
 
 
 def _hook_shelf_geoms(prefix: str, contype: str, conaffinity: str) -> str:
-    """Critical-feature analytic overlay derived from block side sections.
+    """STL-section-derived retaining lips without filling ramp entrances.
 
-    CoACD approximates the bulk mesh well but divides the 1–2 mm hook lips at
-    hull seams. These thin boxes reproduce only the measured horizontal
-    undercut shelves; all ramp entry and release motion still uses contact.
+    At x=0 the four repeated vertical walls are at y=-5.3635+4.4*i mm.
+    Their rounded lips extend 0.7762 mm toward -Y with an underside at
+    z=45.4019 mm.  The boxes below remain inside that measured material.
     """
-    centers_y = (-0.0055, -0.0010, 0.0035, 0.0080)
+    wall_y = (-0.0053635, -0.0009635, 0.0034365, 0.0078365)
     geoms: list[str] = []
-    index = 0
-    for y in centers_y:
-        geoms.append(
-            f'<geom name="{prefix}_collision_hook_{index}" type="box" '
-            f'pos="0 {y:.8g} 0.0448" '
-            'size="0.0174 0.0015 0.00045" '
-            f'contype="{contype}" conaffinity="{conaffinity}" '
-            'friction="0.7 0.01 0.001"/>'
+    for index, y in enumerate(wall_y):
+        slope_top = np.array([y - 0.0034365, 0.0480])
+        slope_bottom = np.array([y - 0.00084, 0.0406])
+        tangent = slope_bottom - slope_top
+        slope_length = float(np.linalg.norm(tangent))
+        angle = float(np.arctan2(tangent[1], tangent[0]))
+        normal_into_cavity = np.array([-np.sin(angle), np.cos(angle)])
+        # Only the exposed +normal face matters geometrically. Extend the box
+        # 0.4 mm into STL-solid material so compliant contact cannot tunnel
+        # through a numerically paper-thin proxy during load transfer.
+        half_thickness = 0.00020
+        slope_center = (
+            (slope_top + slope_bottom) / 2.0
+            - normal_into_cavity * half_thickness
         )
-        index += 1
+        geoms.append(
+            f'<geom name="{prefix}_collision_hook_slope_{index}" type="box" '
+            f'pos="0 {slope_center[0]:.12g} {slope_center[1]:.12g}" '
+            f'size="0.0174 {slope_length / 2.0:.12g} {half_thickness:.12g}" '
+            f'quat="{np.cos(angle / 2.0):.12g} '
+            f'{np.sin(angle / 2.0):.12g} 0 0" '
+            f'contype="{contype}" conaffinity="{conaffinity}" '
+            'friction="0.7 0.01 0.001" '
+            'solref="0.001 1" solimp="0.99 0.999 0.0001 0.5 2"/>'
+        )
+        geoms.append(
+            f'<geom name="{prefix}_collision_hook_lip_{index}" type="box" '
+            f'pos="0 {y - 0.0003881:.8g} 0.0456019" '
+            'size="0.0174 0.0003881 0.0002" '
+            f'contype="{contype}" conaffinity="{conaffinity}" '
+            'friction="0.7 0.01 0.001" '
+            'solref="0.001 1" solimp="0.99 0.999 0.0001 0.5 2"/>'
+        )
         geoms.append(
             f'<geom name="{prefix}_collision_hook_wall_{index}" type="box" '
-            f'pos="0 {y + 0.00185:.8g} 0.042" '
-            'size="0.0174 0.00035 0.0028" '
+            f'pos="0 {y + 0.0002:.8g} 0.04320095" '
+            'size="0.0174 0.0002 0.00220095" '
             f'contype="{contype}" conaffinity="{conaffinity}" '
-            'friction="0.7 0.01 0.001"/>'
+            'friction="0.7 0.01 0.001" '
+            'solref="0.001 1" solimp="0.99 0.999 0.0001 0.5 2"/>'
         )
-        index += 1
+    return "".join(geoms)
+
+
+def _j_hook_geoms(prefix: str, contype: str, conaffinity: str) -> str:
+    """Section-derived inner faces for the URDF block's deeper J hooks.
+
+    CoACD preserves the large tooth cavities but rounds away parts of the
+    sub-millimetre return arm. These boxes extend into STL-solid material while
+    placing their exposed faces on the measured inner stem and return surfaces.
+    """
+    pitch = 0.0044
+    slope_top = np.array([-0.0088, 0.0480])
+    slope_bottom = np.array([-0.00616697, 0.04033811])
+    arm_top_start = np.array([-0.00481473, 0.0480])
+    arm_top_end = np.array([-0.00626723, 0.04576631])
+    nose_points = np.array(
+        [
+            [-0.00626723, 0.04576631],
+            [-0.00628082, 0.04574064],
+            [-0.00629253, 0.04570378],
+            [-0.00629611, 0.04566528],
+            [-0.00628918, 0.04561746],
+            [-0.00626932, 0.04557341],
+            [-0.00623887, 0.04553588],
+            [-0.00619926, 0.04550822],
+            [-0.00615389, 0.04549158],
+            [-0.00610569, 0.04548811],
+            [-0.00605821, 0.04549706],
+            [-0.00601504, 0.04551876],
+            [-0.00599961, 0.04553046],
+        ]
+    )
+    return_start = np.array([-0.0059996, 0.0455305])
+    return_end = np.array([-0.0047932, 0.0468934])
+    stem_start = np.array([-0.00519603, 0.04041361])
+    stem_end = np.array([-0.0047455, 0.0467588])
+    valley_points = np.array(
+        [
+            [-0.00616697, 0.04033811],
+            [-0.00612224, 0.04024220],
+            [-0.00602023, 0.04012106],
+            [-0.00586066, 0.04002871],
+            [-0.00567875, 0.03999874],
+            [-0.00549856, 0.04003773],
+            [-0.00534379, 0.04013791],
+            [-0.00524793, 0.04026398],
+            [-0.00519603, 0.04041361],
+        ]
+    )
+    geoms: list[str] = []
+
+    def add_surface(
+        name: str,
+        index: int,
+        start: np.ndarray,
+        end: np.ndarray,
+        *,
+        offset: np.ndarray,
+        left_normal_sign: float,
+        half_thickness: float,
+    ) -> None:
+        tangent = end - start
+        length = float(np.linalg.norm(tangent))
+        angle = float(np.arctan2(tangent[1], tangent[0]))
+        left_normal = np.array([-np.sin(angle), np.cos(angle)])
+        center = (
+            (start + end) / 2.0
+            + offset
+            + left_normal_sign * left_normal * half_thickness
+        )
+        geoms.append(
+            f'<geom name="{prefix}_collision_j_{name}_{index}" type="box" '
+            f'pos="0 {center[0]:.12g} {center[1]:.12g}" '
+            f'size="0.0174 {length / 2.0:.12g} {half_thickness:.12g}" '
+            f'quat="{np.cos(angle / 2.0):.12g} '
+            f'{np.sin(angle / 2.0):.12g} 0 0" '
+            f'contype="{contype}" conaffinity="{conaffinity}" '
+            'friction="0.7 0.01 0.001" '
+            'solref="0.001 1" solimp="0.99 0.999 0.0001 0.5 2"/>'
+        )
+
+    for index in range(4):
+        offset = np.array([index * pitch, 0.0])
+        slope_tangent = slope_bottom - slope_top
+        slope_length = float(np.linalg.norm(slope_tangent))
+        slope_angle = float(np.arctan2(slope_tangent[1], slope_tangent[0]))
+        slope_normal_into_cavity = np.array(
+            [-np.sin(slope_angle), np.cos(slope_angle)]
+        )
+        slope_half_thickness = 0.00020
+        slope_center = (
+            (slope_top + slope_bottom) / 2.0
+            + offset
+            - slope_normal_into_cavity * slope_half_thickness
+        )
+        geoms.append(
+            f'<geom name="{prefix}_collision_j_slope_{index}" type="box" '
+            f'pos="0 {slope_center[0]:.12g} {slope_center[1]:.12g}" '
+            f'size="0.0174 {slope_length / 2.0:.12g} '
+            f'{slope_half_thickness:.12g}" '
+            f'quat="{np.cos(slope_angle / 2.0):.12g} '
+            f'{np.sin(slope_angle / 2.0):.12g} 0 0" '
+            f'contype="{contype}" conaffinity="{conaffinity}" '
+            'friction="0.7 0.01 0.001" '
+            'solref="0.001 1" solimp="0.99 0.999 0.0001 0.5 2"/>'
+        )
+        add_surface(
+            "arm_top",
+            index,
+            arm_top_start,
+            arm_top_end,
+            offset=offset,
+            left_normal_sign=1.0,
+            half_thickness=0.00014,
+        )
+        for segment, (start, end) in enumerate(
+            zip(nose_points[:-1], nose_points[1:], strict=True)
+        ):
+            add_surface(
+                f"nose_{segment}",
+                index,
+                start,
+                end,
+                offset=offset,
+                left_normal_sign=1.0,
+                half_thickness=0.00010,
+            )
+        for segment, (start, end) in enumerate(
+            zip(valley_points[:-1], valley_points[1:], strict=True)
+        ):
+            add_surface(
+                f"valley_{segment}",
+                index,
+                start,
+                end,
+                offset=offset,
+                left_normal_sign=-1.0,
+                half_thickness=0.00016,
+            )
+
+        return_tangent = return_end - return_start
+        return_length = float(np.linalg.norm(return_tangent))
+        return_angle = float(
+            np.arctan2(return_tangent[1], return_tangent[0])
+        )
+        return_normal_into_solid = np.array(
+            [-np.sin(return_angle), np.cos(return_angle)]
+        )
+        return_half_thickness = 0.00014
+        return_center = (
+            (return_start + return_end) / 2.0
+            + offset
+            + return_normal_into_solid * return_half_thickness
+        )
+        geoms.append(
+            f'<geom name="{prefix}_collision_j_return_{index}" type="box" '
+            f'pos="0 {return_center[0]:.12g} {return_center[1]:.12g}" '
+            f'size="0.0174 {return_length / 2.0:.12g} '
+            f'{return_half_thickness:.12g}" '
+            f'quat="{np.cos(return_angle / 2.0):.12g} '
+            f'{np.sin(return_angle / 2.0):.12g} 0 0" '
+            f'contype="{contype}" conaffinity="{conaffinity}" '
+            'friction="0.7 0.01 0.001" '
+            'solref="0.001 1" solimp="0.99 0.999 0.0001 0.5 2"/>'
+        )
+
+        stem_tangent = stem_end - stem_start
+        stem_length = float(np.linalg.norm(stem_tangent))
+        stem_angle = float(np.arctan2(stem_tangent[1], stem_tangent[0]))
+        stem_normal_into_cavity = np.array(
+            [-np.sin(stem_angle), np.cos(stem_angle)]
+        )
+        stem_half_thickness = 0.00020
+        stem_center = (
+            (stem_start + stem_end) / 2.0
+            + offset
+            - stem_normal_into_cavity * stem_half_thickness
+        )
+        geoms.append(
+            f'<geom name="{prefix}_collision_j_stem_{index}" type="box" '
+            f'pos="0 {stem_center[0]:.12g} {stem_center[1]:.12g}" '
+            f'size="0.0174 {stem_length / 2.0:.12g} '
+            f'{stem_half_thickness:.12g}" '
+            f'quat="{np.cos(stem_angle / 2.0):.12g} '
+            f'{np.sin(stem_angle / 2.0):.12g} 0 0" '
+            f'contype="{contype}" conaffinity="{conaffinity}" '
+            'friction="0.7 0.01 0.001" '
+            'solref="0.001 1" solimp="0.99 0.999 0.0001 0.5 2"/>'
+        )
     return "".join(geoms)
 
 

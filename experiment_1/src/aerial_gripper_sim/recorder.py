@@ -147,7 +147,15 @@ def _records_to_frame(records: list[dict[str, Any]]) -> pd.DataFrame:
                 "payload_lift_m": item["payload_lift_m"],
                 "total_string_tension_n": item["total_string_tension_n"],
                 "strings_carrying_load": item["strings_carrying_load"],
+                "taut_strings": item["taut_strings"],
+                "captured_strings": item["captured_strings"],
                 "string_payload_contacts": item["string_payload_contacts"],
+                "max_string_endpoint_error_m": item[
+                    "max_string_endpoint_error_m"
+                ],
+                "max_string_axial_strain_abs": item[
+                    "max_string_axial_strain_abs"
+                ],
                 "minimum_insertion_depth_m": item["minimum_insertion_depth_m"],
                 "washer_reaction_force_n": item["washer_reaction_force_n"],
                 "payload_constraint_force_norm_n": float(
